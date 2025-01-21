@@ -1,0 +1,113 @@
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local CombatRemoteEvent = Character:WaitForChild("CombatRemoteEvent")
+local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+
+-- Create a ScreenGui and TextLabel to display the username/displayname
+local screenGui = Instance.new("ScreenGui")
+screenGui.Parent = LocalPlayer.PlayerGui
+
+local usernameLabel = Instance.new("TextLabel")
+usernameLabel.Size = UDim2.new(0, 200, 0, 50)
+usernameLabel.Position = UDim2.new(0.5, -100, 0, 50)
+usernameLabel.BackgroundTransparency = 1
+usernameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+usernameLabel.TextSize = 20
+usernameLabel.Text = "Nobody"
+usernameLabel.Parent = screenGui
+
+local selectedPlayer = nil -- Currently targeted player
+local counterAnimationId = "rbxassetid://18414776078" -- Animation that triggers counterattack
+local isCountering = false -- Whether the player is performing the counter animation
+
+-- Function to update UI with the targeted player's name
+local function updateUsername()
+    if selectedPlayer and selectedPlayer.Character and selectedPlayer.Character:FindFirstChild("Humanoid") then
+        usernameLabel.Text = selectedPlayer.DisplayName ~= "" and selectedPlayer.DisplayName or selectedPlayer.Name
+    else
+        usernameLabel.Text = "Nobody"
+        selectedPlayer = nil
+    end
+end
+
+-- Function to clear the target
+local function clearTarget()
+    selectedPlayer = nil
+    usernameLabel.Text = "Nobody"
+end
+
+-- Function to handle player death
+local function onPlayerDeath()
+    clearTarget()
+end
+
+-- Auto-targeting system (Locks onto the attacker or the one you hit)
+local function handleDamage(attacker, victim)
+    if victim == LocalPlayer and attacker ~= LocalPlayer and attacker.Name ~= "Kiru_Kazuma" then
+        selectedPlayer = attacker
+    elseif attacker == LocalPlayer and victim.Name ~= "Kiru_Kazuma" then
+        selectedPlayer = victim
+    end
+    
+    updateUsername()
+    
+    if selectedPlayer and selectedPlayer.Character then
+        local humanoid = selectedPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.Died:Connect(onPlayerDeath)
+        end
+    end
+end
+
+-- Listen for CombatRemoteEvent (Incoming or Outgoing Hits)
+CombatRemoteEvent.OnClientEvent:Connect(function(action, target)
+    if action == "HitHumans" and target and target:IsA("Humanoid") then
+        local attacker = target.Parent and Players:GetPlayerFromCharacter(target.Parent)
+        local victim = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if attacker and victim then
+            handleDamage(attacker, Players:GetPlayerFromCharacter(victim.Parent))
+        end
+    end
+end)
+
+-- Function to perform Skill1 counterattack
+local function counterAttack(attacker)
+    if isCountering and selectedPlayer then
+        local args = {
+            [1] = "HitHumans",
+            [2] = attacker.Character.Humanoid,
+            [3] = "Skill1",
+            [6] = true
+        }
+        CombatRemoteEvent:FireServer(unpack(args))
+    end
+end
+
+-- Detect animation playing to enable countering
+local function monitorAnimations()
+    local animator = Humanoid:FindFirstChildOfClass("Animator")
+    if animator then
+        for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+            if track.Animation.AnimationId == counterAnimationId then
+                isCountering = true
+                track.Stopped:Connect(function()
+                    isCountering = false
+                end)
+            end
+        end
+    end
+end
+
+Humanoid.AnimationPlayed:Connect(monitorAnimations)
+
+-- Detect when hit while countering
+CombatRemoteEvent.OnClientEvent:Connect(function(action, target)
+    if action == "HitHumans" and target and target:IsA("Humanoid") then
+        local attacker = target.Parent and Players:GetPlayerFromCharacter(target.Parent)
+        if attacker and isCountering then
+            counterAttack(attacker)
+        end
+    end
+end)
