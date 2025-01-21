@@ -10,104 +10,295 @@ local screenGui = Instance.new("ScreenGui")
 screenGui.Parent = LocalPlayer.PlayerGui
 
 local usernameLabel = Instance.new("TextLabel")
-usernameLabel.Size = UDim2.new(0, 200, 0, 50)
-usernameLabel.Position = UDim2.new(0.5, -100, 0, 50)
-usernameLabel.BackgroundTransparency = 1
-usernameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-usernameLabel.TextSize = 20
-usernameLabel.Text = "Nobody"
+usernameLabel.Size = UDim2.new(0, 200, 0, 50)  -- Adjust size as needed
+usernameLabel.Position = UDim2.new(0.5, -100, 0, 50)  -- Adjust position as needed
+usernameLabel.BackgroundTransparency = 1  -- Makes background invisible
+usernameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)  -- White text
+usernameLabel.TextSize = 20  -- Adjust text size
+usernameLabel.Text = "Waiting for player..."  -- Initial placeholder text
 usernameLabel.Parent = screenGui
 
-local selectedPlayer = nil -- Currently targeted player
-local counterAnimationId = "rbxassetid://18414776078" -- Animation that triggers counterattack
-local isCountering = false -- Whether the player is performing the counter animation
+-- Variable to store the selected player's username or displayname
+local selectedPlayer
+local playerList = Players:GetPlayers()
+local currentPlayerIndex = 1  -- Index for cycling players
 
--- Function to update UI with the targeted player's name
-local function updateUsername()
-    if selectedPlayer and selectedPlayer.Character and selectedPlayer.Character:FindFirstChild("Humanoid") then
-        usernameLabel.Text = selectedPlayer.DisplayName ~= "" and selectedPlayer.DisplayName or selectedPlayer.Name
-    else
-        usernameLabel.Text = "Nobody"
-        selectedPlayer = nil
-    end
-end
-
--- Function to clear the target
-local function clearTarget()
-    selectedPlayer = nil
-    usernameLabel.Text = "Nobody"
-end
-
--- Function to handle player death
-local function onPlayerDeath()
-    clearTarget()
-end
-
--- Auto-targeting system (Locks onto the attacker or the one you hit)
-local function handleDamage(attacker, victim)
-    if victim == LocalPlayer and attacker ~= LocalPlayer and attacker.Name ~= "Kiru_Kazuma" then
-        selectedPlayer = attacker
-    elseif attacker == LocalPlayer and victim.Name ~= "Kiru_Kazuma" then
-        selectedPlayer = victim
-    end
-    
+-- Player join and leave events
+Players.PlayerAdded:Connect(function(player)
+    -- Update the player list and cycle to the next player
     updateUsername()
-    
-    if selectedPlayer and selectedPlayer.Character then
-        local humanoid = selectedPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            humanoid.Died:Connect(onPlayerDeath)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    -- Update the player list and cycle to the next player
+    updateUsername()
+end)
+
+-- Modify updateUsername function to account for player joining or leaving
+local function updateUsername()
+    -- Refresh the player list to include current players
+    local playerList = Players:GetPlayers()
+
+    -- Skip "Kiru_Kazuma" and cycle to the next available player
+    repeat
+        currentPlayerIndex = currentPlayerIndex + 1
+        if currentPlayerIndex > #playerList then
+            currentPlayerIndex = 1
         end
+    until playerList[currentPlayerIndex].Name ~= "Kiru_Kazuma"
+
+    selectedPlayer = playerList[currentPlayerIndex]  -- Store the selected player
+
+    -- Check for DisplayName, if available
+    local displayName = selectedPlayer.DisplayName
+    if displayName ~= "" then
+        usernameLabel.Text = displayName  -- Display DisplayName if available
+    else
+        usernameLabel.Text = selectedPlayer.Name  -- Fallback to username if no DisplayName
     end
 end
 
--- Listen for CombatRemoteEvent (Incoming or Outgoing Hits)
-CombatRemoteEvent.OnClientEvent:Connect(function(action, target)
-    if action == "HitHumans" and target and target:IsA("Humanoid") then
-        local attacker = target.Parent and Players:GetPlayerFromCharacter(target.Parent)
-        local victim = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if attacker and victim then
-            handleDamage(attacker, Players:GetPlayerFromCharacter(victim.Parent))
-        end
+-- Function to clear the username, stop targeting, and reset selected player
+local function clearUsername()
+    usernameLabel.Text = "Nobody"  -- Display "Nobody"
+    selectedPlayer = nil  -- Reset the selected player
+end
+
+-- Draggable functionality
+local dragging = false
+local dragInput
+local dragStart
+local startPos
+
+usernameLabel.InputBegan:Connect(function(input, isProcessed)
+    if isProcessed then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = usernameLabel.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
     end
 end)
 
--- Function to perform Skill1 counterattack
-local function counterAttack(attacker)
-    if isCountering and selectedPlayer then
+usernameLabel.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        usernameLabel.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- Keybind functions
+local function onPressR()
+    if selectedPlayer then
         local args = {
             [1] = "HitHumans",
-            [2] = attacker.Character.Humanoid,
-            [3] = "Skill1",
+            [2] = selectedPlayer.Character.Humanoid,
+            [3] = "Hit",
+            [4] = 0.7,
+            [5] = "sHIG"
+        }
+        CombatRemoteEvent:FireServer(unpack(args))
+    end
+end
+
+local tAnimations = {
+    "rbxassetid://18848991738",
+    "rbxassetid://18848994262"
+}
+local currentTAnim = 1 -- Tracks which animation to play
+local animationSpeed = 1.5 -- Adjust speed as needed
+local currentTrack = nil -- Keep track of the current animation
+
+local function playTAnimation()
+    if Humanoid then
+        -- Stop the current animation if it's already playing
+        if currentTrack then
+            currentTrack:Stop()
+        end
+
+        -- Load and play the new animation
+        local animator = Humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", Humanoid)
+        local animation = Instance.new("Animation")
+        animation.AnimationId = tAnimations[currentTAnim]
+        currentTrack = animator:LoadAnimation(animation)
+        currentTrack:Play()
+        currentTrack:AdjustSpeed(animationSpeed) -- Set speed
+
+        -- Cycle to the next animation
+        currentTAnim = currentTAnim == 1 and 2 or 1
+    end
+end
+
+-- Update T key input
+UserInputService.InputBegan:Connect(function(input, isProcessed)
+    if isProcessed then return end
+    if input.KeyCode == Enum.KeyCode.T then
+        playTAnimation()
+        onPressR() -- Keep the attack function if needed
+    end
+end)
+
+-- HeatAction function (H key)
+local function onPressH()
+    if selectedPlayer then
+        local args = {
+            [1] = "HitHumans",
+            [2] = selectedPlayer.Character.Humanoid,
+            [3] = "HeatAction",
             [6] = true
         }
         CombatRemoteEvent:FireServer(unpack(args))
     end
 end
 
--- Detect animation playing to enable countering
-local function monitorAnimations()
-    local animator = Humanoid:FindFirstChildOfClass("Animator")
-    if animator then
-        for _, track in pairs(animator:GetPlayingAnimationTracks()) do
-            if track.Animation.AnimationId == counterAnimationId then
-                isCountering = true
-                track.Stopped:Connect(function()
-                    isCountering = false
-                end)
-            end
+-- Skill1 action (C key)
+local function onPressC()
+    if selectedPlayer then
+        local targetPlayer = Players:FindFirstChild(selectedPlayer.Name)
+        if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("Humanoid") then
+            local args = {
+                [1] = "HitHumans",
+                [2] = targetPlayer.Character.Humanoid,
+                [3] = "Skill1",
+                [6] = true
+            }
+            CombatRemoteEvent:FireServer(unpack(args))
         end
     end
 end
 
-Humanoid.AnimationPlayed:Connect(monitorAnimations)
+-- Function to play an animation
+local function playAnimation(animationId)
+    if Humanoid then
+        local animator = Humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", Humanoid)
+        local animation = Instance.new("Animation")
+        animation.AnimationId = animationId
+        local track = animator:LoadAnimation(animation)
+        track:Play()
+    end
+end
 
--- Detect when hit while countering
+-- Function to perform the "Finisher" attack
+local function performFinisher()
+    if selectedPlayer then
+        local args = {
+            [1] = "HitHumans",
+            [2] = selectedPlayer.Character.Humanoid,
+            [3] = "Finisher",
+            [4] = 1.2,
+            [5] = "kLEF"
+        }
+        CombatRemoteEvent:FireServer(unpack(args))
+    end
+end
+
+-- Function to perform the "Finish" attack
+local function performFinish()
+    if selectedPlayer then
+        local args = {
+            [1] = "HitHumans",
+            [2] = selectedPlayer.Character.Humanoid,
+            [3] = "Hit",
+            [4] = 1.2,
+            [5] = "fMID",
+            [6] = true
+        }
+        CombatRemoteEvent:FireServer(unpack(args))
+    end
+end
+
+local currentXTrack = nil -- Keep track of the current animation for X
+
+local function playXAnimationAndFinisher()
+    if Humanoid then
+        -- Stop the current animation if it's already playing
+        if currentXTrack then
+            currentXTrack:Stop()
+        end
+
+        -- Play the X animation
+        local animator = Humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", Humanoid)
+        local animation = Instance.new("Animation")
+        animation.AnimationId = "rbxassetid://102659075524987" -- Play animation
+        currentXTrack = animator:LoadAnimation(animation)
+        currentXTrack:Play()
+
+        -- Perform the Finisher attack
+        performFinish() -- Execute the Finisher action
+    end
+end
+
+-- Update X key input
+UserInputService.InputBegan:Connect(function(input, isProcessed)
+    if isProcessed then return end
+    if input.KeyCode == Enum.KeyCode.X then
+        playXAnimationAndFinisher() -- Play animation and perform Finisher
+    end
+end)
+
+local currentCTrack = nil -- Keep track of the current animation for C
+
+local function playCAnimationAndFinisher()
+    if Humanoid then
+        -- Stop the current animation if it's already playing
+        if currentCTrack then
+            currentCTrack:Stop()
+        end
+
+        -- Play the C animation
+        local animator = Humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", Humanoid)
+        local animation = Instance.new("Animation")
+        animation.AnimationId = "rbxassetid://99054281831610" -- Play animation
+        currentCTrack = animator:LoadAnimation(animation)
+        currentCTrack:Play()
+
+        -- Wait for 0.7 seconds before performing the Finisher attack
+        wait(0.7) -- Adjust the wait time if needed
+        performFinisher() -- Execute the Finisher action
+    end
+end
+
+-- Update C key input
+UserInputService.InputBegan:Connect(function(input, isProcessed)
+    if isProcessed then return end
+    if input.KeyCode == Enum.KeyCode.C then
+        playCAnimationAndFinisher() -- Play animation and perform Finisher
+    end
+end)
+
+-- Auto-targeting system with 3-second reset if no attacks happen
+local targetClearingTime = 3 -- Time in seconds to clear target if no attack happens
+local lastAttackTime = tick()  -- Track the last time an attack happened
+
+local function clearTargetAfterDelay()
+    wait(targetClearingTime) -- Wait for the target clearing delay
+    if tick() - lastAttackTime >= targetClearingTime then
+        clearUsername()  -- Clear target if no attack happens in the specified time
+    end
+end
+
 CombatRemoteEvent.OnClientEvent:Connect(function(action, target)
     if action == "HitHumans" and target and target:IsA("Humanoid") then
         local attacker = target.Parent and Players:GetPlayerFromCharacter(target.Parent)
-        if attacker and isCountering then
-            counterAttack(attacker)
+        if attacker and attacker ~= LocalPlayer then
+            selectedPlayer = attacker  -- Automatically target the player who hit you
+            updateUsername()  -- Update the UI with the attacker's name
+            lastAttackTime = tick()  -- Reset attack timer
+
+            -- Start the target clearing delay
+            spawn(clearTargetAfterDelay)
         end
+    end
+end)
+
+-- Reset attack timer when you attack
+UserInputService.InputBegan:Connect(function(input, isProcessed)
+    if isProcessed then return end
+    if input.KeyCode == Enum.KeyCode.T or input.KeyCode == Enum.KeyCode.X or input.KeyCode == Enum.KeyCode.C then
+        lastAttackTime = tick()  -- Reset the attack timer when you attack
     end
 end)
