@@ -20,19 +20,16 @@ usernameLabel.Parent = screenGui
 
 -- Variable to store the selected player's username or displayname
 local selectedPlayer
-local playerList = Players:GetPlayers()
-local currentPlayerIndex = 1  -- Index for cycling players
+local targetClearingTime = 3 -- Time in seconds to clear target if no attack happens
+local lastAttackTime = tick()  -- Track the last time an attack happened
 
--- Player join and leave events
-Players.PlayerAdded:Connect(function(player)
-    -- Update the player list and cycle to the next player
-    updateUsername()
-end)
-
-Players.PlayerRemoving:Connect(function(player)
-    -- Update the player list and cycle to the next player
-    updateUsername()
-end)
+-- Function to clear target after delay
+local function clearTargetAfterDelay()
+    wait(targetClearingTime) -- Wait for the target clearing delay
+    if tick() - lastAttackTime >= targetClearingTime then
+        clearUsername()  -- Clear target if no attack happens in the specified time
+    end
+end
 
 -- Modify updateUsername function to account for player joining or leaving
 local function updateUsername()
@@ -63,6 +60,42 @@ local function clearUsername()
     usernameLabel.Text = "Nobody"  -- Display "Nobody"
     selectedPlayer = nil  -- Reset the selected player
 end
+
+-- Player join and leave events
+Players.PlayerAdded:Connect(function(player)
+    -- Update the player list and cycle to the next player
+    updateUsername()
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    -- Update the player list and cycle to the next player
+    updateUsername()
+end)
+
+-- Function to handle when a player hits you
+CombatRemoteEvent.OnClientEvent:Connect(function(action, target)
+    if action == "HitHumans" and target and target:IsA("Humanoid") then
+        -- Check if the attacker is someone other than the local player
+        local attacker = target.Parent and Players:GetPlayerFromCharacter(target.Parent)
+        
+        if attacker and attacker ~= LocalPlayer then
+            selectedPlayer = attacker  -- Automatically target the player who hit you
+            updateUsername()  -- Update the UI with the attacker's name
+            lastAttackTime = tick()  -- Reset attack timer
+
+            -- Start the target clearing delay
+            spawn(clearTargetAfterDelay)
+        end
+    end
+end)
+
+-- Reset attack timer when you attack
+UserInputService.InputBegan:Connect(function(input, isProcessed)
+    if isProcessed then return end
+    if input.KeyCode == Enum.KeyCode.T or input.KeyCode == Enum.KeyCode.X or input.KeyCode == Enum.KeyCode.C then
+        lastAttackTime = tick()  -- Reset the attack timer when you attack
+    end
+end)
 
 -- Draggable functionality
 local dragging = false
@@ -270,35 +303,77 @@ UserInputService.InputBegan:Connect(function(input, isProcessed)
     end
 end)
 
--- Auto-targeting system with 3-second reset if no attacks happen
-local targetClearingTime = 3 -- Time in seconds to clear target if no attack happens
-local lastAttackTime = tick()  -- Track the last time an attack happened
+local currentNTrack = nil -- Keep track of the current animation for N
 
-local function clearTargetAfterDelay()
-    wait(targetClearingTime) -- Wait for the target clearing delay
-    if tick() - lastAttackTime >= targetClearingTime then
-        clearUsername()  -- Clear target if no attack happens in the specified time
+local function playNAnimation()
+    if Humanoid then
+        -- Stop the current animation if it's already playing
+        if currentNTrack then
+            currentNTrack:Stop()
+        end
+
+        -- Play the N animation
+        local animator = Humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", Humanoid)
+        local animation = Instance.new("Animation")
+        animation.AnimationId = "rbxassetid://18848797317" -- Play animation
+        currentNTrack = animator:LoadAnimation(animation)
+        currentNTrack:Play()
     end
 end
 
-CombatRemoteEvent.OnClientEvent:Connect(function(action, target)
-    if action == "HitHumans" and target and target:IsA("Humanoid") then
-        local attacker = target.Parent and Players:GetPlayerFromCharacter(target.Parent)
-        if attacker and attacker ~= LocalPlayer then
-            selectedPlayer = attacker  -- Automatically target the player who hit you
-            updateUsername()  -- Update the UI with the attacker's name
-            lastAttackTime = tick()  -- Reset attack timer
-
-            -- Start the target clearing delay
-            spawn(clearTargetAfterDelay)
-        end
-    end
-end)
-
--- Reset attack timer when you attack
+-- Update N key input
 UserInputService.InputBegan:Connect(function(input, isProcessed)
     if isProcessed then return end
-    if input.KeyCode == Enum.KeyCode.T or input.KeyCode == Enum.KeyCode.X or input.KeyCode == Enum.KeyCode.C then
-        lastAttackTime = tick()  -- Reset the attack timer when you attack
+    if input.KeyCode == Enum.KeyCode.N then
+        playNAnimation() -- Play animation for fun
     end
 end)
+
+local currentJTrack = nil -- Keep track of the current animation for J
+
+local function playJAnimation()
+    if Humanoid then
+        -- Stop the current animation if it's already playing
+        if currentJTrack then
+            currentJTrack:Stop()
+        end
+
+        -- Play the J animation
+        local animator = Humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", Humanoid)
+        local animation = Instance.new("Animation")
+        animation.AnimationId = "rbxassetid://84065993964036" -- Play animation
+        currentJTrack = animator:LoadAnimation(animation)
+        currentJTrack:Play()
+    end
+end
+
+-- Update J key input
+UserInputService.InputBegan:Connect(function(input, isProcessed)
+    if isProcessed then return end
+    if input.KeyCode == Enum.KeyCode.J then
+        playJAnimation() -- Play animation for fun
+    end
+end)
+
+-- Function to set STANCE, STANCEWALK, and STANCESTART animations (AnimationId)
+local function setStanceAnimations()
+    local officer = workspace:FindFirstChild("Kiru_Kazuma") and workspace.Kiru_Kazuma:FindFirstChild("Officer")
+    
+    if officer then
+        local animationFolder = officer:FindFirstChild("AnimationFolder")
+        
+        if animationFolder then
+            -- Set STANCE animation
+            local stance = animationFolder:FindFirstChild("STANCE")
+            if stance then stance.AnimationId = "rbxassetid://18848797317" end
+            
+            -- Set STANCEWALK animation
+            local stanceWalk = animationFolder:FindFirstChild("STANCEWALK")
+            if stanceWalk then stanceWalk.AnimationId = "rbxassetid://18848797317" end
+            
+            -- Set STANCESTART animation
+            local stanceStart = animationFolder:FindFirstChild("STANCESTART")
+            if stanceStart then stanceStart.AnimationId = "rbxassetid://18848797317" end
+        end
+    end
+end
